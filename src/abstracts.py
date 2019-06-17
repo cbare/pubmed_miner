@@ -1,4 +1,17 @@
+"""
+functions for retrieving pubmed abstracts from the Entrez API.
+
+
+example usage:
+
+# run from the project root directory
+
+$ python src/abstracts.py fetch --pmids-file data/pmids_gold_set_labeled.txt --output-dir data
+$ python src/abstracts.py fetch --pmids-file data/pmids_test_set_unlabeled.txt
+"""
+import click
 import io
+import os, os.path
 import requests
 from collections import namedtuple
 from lxml import etree
@@ -8,84 +21,78 @@ PMID_XPATH = 'MedlineCitation/PMID/text()'
 TITLE_XPATH = 'MedlineCitation/Article/ArticleTitle/text()'
 ABSTRACT_XPATH = 'MedlineCitation/Article/Abstract/AbstractText/text()'
 
-filename = 'data/pmids_gold_set_unlabeled.txt'
-with open(filename) as f:
-    pubmed_ids = f.read().strip().split()
-
-
-filename = 'data/pmids_test_set_unlabeled.txt'
-with open(filename) as f:
-    test_set_pubmed_ids = f.read().strip().split()
-
-
-## parse text return type?
-import re
-
-url = ('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/'
-      'efetch.fcgi'
-      '?db=pubmed'
-      '&retmode=text'
-      '&rettype=abstract'
-      '&id={ids}').format(ids=','.join(pubmed_ids))
-
-response = requests.get(url)
-
-docs = re.split(r'\s*\n{3}', response.text.strip())
-
-for doc in docs:
-    m = re.match(r'^(\d+). ', doc)
-    if not m:
-        print(doc)
-
-# PMID: 8270381  [Indexed for MEDLINE]
-# PMID: 8712208  [Indexed for MEDLINE]
-# PMID: 22229570  [Indexed for MEDLINE]
-# ...
-
-# apparently records aren't well separated by triple new-lines!
-
 
 Article = namedtuple('Article', 'pmid title abstract')
 
 
-url = ('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/'
-      'efetch.fcgi'
-      '?db=pubmed'
-      '&retmode=xml'
-      '&rettype=abstract'
-      '&id={ids}').format(ids=','.join(pubmed_ids))
 
-## stream XML into lxml parser
-response = requests.get(url, stream=True)
-root = etree.parse(io.BytesIO(response.content))
-
-for article in root.xpath('PubmedArticle'):
-    print('-'*90)
-    text_nodes = article.xpath('MedlineCitation/Article/Abstract/AbstractText/text()')
-    print(join_text(text_nodes))
-
+def read_pubmed_ids_from_file(path):
+    """
+    Read a list of pubmed IDs from the first column of a tab-delimited file.
+    """
+    pubmed_ids = []
+    with open(path) as f:
+        for line in f:
+            fields = line.strip().split()
+            if len(fields) > 0:
+                pubmed_ids.append(fields[0])
+    return pubmed_ids
 
 
 def join_text(nodes, delim='\n'):
+    """
+    join xml text nodes into a string
+    """
     return delim.join(nodes) if nodes else None
 
 
-def fetch_abstracts(pubmed_ids):
+def fetch_abstracts_as_xml(pubmed_ids):
     """
-    Fetches abstracts from the Entrez API.
-
-    Returns a dict mapping pubmed ids to abstracts.
+    Fetches abstracts from the Entrez API and return an lxml ElementTree.
     """
     url = ('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/'
           'efetch.fcgi'
           '?db=pubmed'
           '&retmode=xml'
           '&rettype=abstract'
-          '&id={ids}').format(ids=','.join(pubmed_ids))
+          '&id={ids}').format(ids=','.join(str(pmid) for pmid in pubmed_ids))
 
     ## stream XML response into lxml parser
     response = requests.get(url, stream=True)
-    root = etree.parse(io.BytesIO(response.content))
+    return etree.parse(io.BytesIO(response.content))
+
+
+
+def fetch_abstracts_to_files(pubmed_ids, output_dir):
+    """
+    Fetch abstracts from pubmed and write each abstract as an XML file in the
+    specified output directory.
+
+    Returns a list of output paths.
+    """
+    root = fetch_abstracts_as_xml(pubmed_ids)
+
+    ## write each abstract to an xml file separately
+    paths = []
+    for article in root.xpath('PubmedArticle'):
+        pmid = join_text(article.xpath(PMID_XPATH))
+        path = os.path.join(output_dir, f'{pmid}.xml')
+        etree.ElementTree(article).write(path,
+                                         encoding='utf-8',
+                                         xml_declaration=True,
+                                         pretty_print=True)
+        paths.append(path)
+
+    return paths
+
+
+def fetch_abstracts(pubmed_ids):
+    """
+    Fetches abstracts from the Entrez API.
+
+    Returns a dict mapping pubmed ids to abstract objects
+    """
+    root = fetch_abstracts_as_xml(pubmed_ids)
 
     ## extract abstracts for each article
     return [Article(
@@ -97,52 +104,39 @@ def fetch_abstracts(pubmed_ids):
 
 
 
-fetch_abstracts(['8270381','8712208','12606185'])
+## tell Click that we want a group of subcommands
+@click.group()
+def cli():
+    pass
+
+
+@cli.command()
+@click.option('--output-dir', help='output directory.')
+@click.option('--pmids-file', help='path to file containing pubmed ids')
+@click.argument('pubmed-ids', nargs=-1)
+def fetch(output_dir, pmids_file, pubmed_ids):
+    """
+    Command to fetch abstracts from pubmed given a list of pubmed IDs.
+
+    Write output to stdout or, if output directory is given, to XML files in
+    that directory.
+    """
+    if pmids_file:
+        pubmed_ids = list(pubmed_ids) + read_pubmed_ids_from_file(pmids_file)
+
+    if output_dir:
+        paths = fetch_abstracts_to_files(pubmed_ids, output_dir)
+        print(f'wrote {len(paths)} files.')
+    else:
+        articles = fetch_abstracts(pubmed_ids)
+        for article in articles:
+            print('\n\n')
+            print(f'PMID: {article.pmid}')
+            print(f'title: {article.title}')
+            print(f'abstract: {article.abstract}')
+        print(f'\n\nfetched {len(articles)} abstracts.\n')
 
 
 
-
-
-
-from Bio import Entrez
-from Bio.Entrez.Parser import StringElement
-
-PMID_XPATH = 'MedlineCitation/PMID'
-TITLE_XPATH = 'MedlineCitation/Article/ArticleTitle'
-ABSTRACT_XPATH = 'MedlineCitation/Article/Abstract/AbstractText'
-
-
-Entrez.email = 'christopherbare@gmail.com'
-
-
-x = Entrez.read(Entrez.efetch(db="pubmed",
-                              id=','.join(pubmed_ids),
-                              rettype="abstract",
-                              retmode="xml"))
-
-def get_xpath(xpath, element):
-    keys = xpath.split('/')
-    e = element
-    for key in keys:
-        if e is None: break
-        e = e.get(key)
-    return e
-
-def join_text(nodes, delim='\n'):
-    if nodes:
-        if isinstance(nodes, StringElement):
-            return str(nodes)
-        elif isinstance(nodes, str):
-            return nodes
-        elif isinstance(nodes, Sequence):
-            return delim.join(nodes)
-    return nodes
-
-articles = [
-    Article(
-        pmid = join_text(get_xpath(PMID_XPATH, article)),
-        title = join_text(get_xpath(TITLE_XPATH, article)),
-        abstract = join_text(get_xpath(ABSTRACT_XPATH, article)),
-    )
-    for article in x['PubmedArticle']]
-
+if __name__ == '__main__':
+    cli()
