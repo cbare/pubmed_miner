@@ -13,8 +13,11 @@ import click
 import io
 import os, os.path
 import requests
+import sys
 from collections import namedtuple
 from lxml import etree
+
+import lda
 
 
 PMID_XPATH = 'MedlineCitation/PMID/text()'
@@ -43,7 +46,7 @@ def join_text(nodes, delim='\n'):
     """
     join xml text nodes into a string
     """
-    return delim.join(nodes) if nodes else None
+    return delim.join(nodes) if nodes else ''
 
 
 def fetch_abstracts_as_xml(pubmed_ids):
@@ -135,6 +138,36 @@ def fetch(output_dir, pmids_file, pubmed_ids):
             print(f'title: {article.title}')
             print(f'abstract: {article.abstract}')
         print(f'\n\nfetched {len(articles)} abstracts.\n')
+
+
+@cli.command()
+@click.option('--output-path', help='output path.')
+@click.option('--pmids-file', help='path to file containing pubmed ids')
+@click.option('--best-of-n', type=int, default=None)
+@click.option('--discretize', is_flag=True)
+def cluster(output_path, pmids_file, best_of_n, discretize):
+    """
+    """
+    pubmed_ids = read_pubmed_ids_from_file(pmids_file)
+
+    articles = fetch_abstracts(pubmed_ids)
+
+    params = {
+        'k': 5,
+        'min_occur': 11,
+        'iterations': 20,
+        'passes': 300,
+    }
+
+    result = lda.cluster(articles, params, best_of_n=best_of_n)
+
+    if output_path:
+        with open(output_path, 'wt') as out:
+            lda.print_result(pubmed_ids, result, discretize=discretize, out=out)
+    else:
+        lda.print_result(pubmed_ids, result, discretize=discretize)
+
+
 
 
 
