@@ -1,14 +1,8 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import random
-import re
-import requests
-import seaborn as sns; sns.set()
 import sys
 from argparse import Namespace
 from collections import Counter, namedtuple
-from lxml import etree
 from tqdm import tqdm
 
 import gensim
@@ -140,7 +134,9 @@ def print_result(pubmed_ids, result, discretize, out=None):
     if not out:
         out = sys.stdout
     for pmid, bow in zip(pubmed_ids, result.bows):
-        print('\t'.join((pmid, f(result.lda.get_document_topics(bow)))), file=out)
+        print('\t'.join(str(field)
+                        for field in [pmid,f(result.lda.get_document_topics(bow))]),
+              file=out)
 
 
 def cluster(articles, params, best_of_n=None):
