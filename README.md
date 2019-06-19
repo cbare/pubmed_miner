@@ -35,7 +35,7 @@ All of the prototyping was done in [jupyter](https://jupyter.org/) notebooks. Th
 These look OK when viewed in github, but it's more fun to run them, which you can do with the command:
 
 ```
-jupyter notebooks
+PYTHONPATH=`pwd`/src venv/bin/jupyter notebook
 ```
 
 
