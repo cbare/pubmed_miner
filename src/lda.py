@@ -72,14 +72,14 @@ def fit(n_topics, min_occur, iterations, passes, texts, wc):
     return Namespace(**locals())
 
 
-def bows_to_matrix(bows):
+def bows_to_matrix(bows, dictionary):
     """
     Convert list of bag-of-words in sparse format to matrix format.
 
     Todo: return a sparse format from scipy.sparse instead of dense matrix.
     """
-    X = np.zeros((len(best.bows),len(best.dictionary)))
-    for i, bow in enumerate(best.bows):
+    X = np.zeros((len(bows),len(dictionary)))
+    for i, bow in enumerate(bows):
         for j, x in bow:
             X[i,j] = x
     return X

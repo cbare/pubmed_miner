@@ -23,6 +23,7 @@ On the unlabeled test-set, the two models acheived very similar results. Kmeans 
 Although both methods perform decently, kmeans might be a better choice. It's simpler, faster and could probably perform at least as well given a little more attention to feature engineering. If we're looking for an assignment to a single cluster, we're not playing to the strength of LDA.
 
 
+
 ## Setting up venv
 
 Set up a virtual environment with the following commands:
@@ -42,4 +43,12 @@ The _--discretize_ parameter collapses the resulting probabilities to a single c
 
 ```
 PYTHONPATH=`pwd`/src python src/abstracts.py cluster --pmids-file data/pmids_gold_set_unlabeled.txt --discretize --best-of-n 5
+```
+
+## Running tests
+
+Testing is important. Analytics code is often difficult to test due to complex dependencies. The _tests_ folder holds a few token tests. To run them:
+
+```
+PYTHONPATH=`pwd`/src py.test -v -W ignore::DeprecationWarning
 ```
